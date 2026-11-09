@@ -1,0 +1,450 @@
+diff --git a/.chezmoiignore b/.chezmoiignore
+index b8ef4ec..efd1658 100644
+--- a/.chezmoiignore
++++ b/.chezmoiignore
+@@ -4,6 +4,10 @@ docs
+ docs/**
+ .gitignore
+ 
++# The Raspberry Pi setup merges the legacy theme into alacritty.toml.
++.config/alacritty/alacritty.yml
++.condarc
++
+ # Local credentials, application state, and machine-specific chezmoi state.
+ .ssh
+ .ssh/**
+diff --git a/dot_bashrc b/dot_bashrc
+index 5d9583c..9a75c0d 100644
+--- a/dot_bashrc
++++ b/dot_bashrc
+@@ -115,20 +115,9 @@ if ! shopt -oq posix; then
+     . /etc/bash_completion
+   fi
+ fi
+-. "$HOME/.cargo/env"
+-
+-# >>> conda initialize >>>
+-# !! Contents within this block are managed by 'conda init' !!
+-# __conda_setup="$('/home/duck/.pyenv/versions/miniforge3-22.9.0-3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+-# if [ $? -eq 0 ]; then
+-#     eval "$__conda_setup"
+-# else
+-#     if [ -f "/home/duck/.pyenv/versions/miniforge3-22.9.0-3/etc/profile.d/conda.sh" ]; then
+-#         . "/home/duck/.pyenv/versions/miniforge3-22.9.0-3/etc/profile.d/conda.sh"
+-#     else
+-#         export PATH="/home/duck/.pyenv/versions/miniforge3-22.9.0-3/bin:$PATH"
+-#     fi
+-# fi
+-# unset __conda_setup
+-# # <<< conda initialize <<<
+-# 
++if [ -r "$HOME/.config/rspb/env.sh" ]; then
++    . "$HOME/.config/rspb/env.sh"
++fi
++if command -v direnv >/dev/null 2>&1; then
++    eval "$(direnv hook bash)"
++fi
+diff --git a/dot_profile b/dot_profile
+index 128c4cf..2e298a1 100644
+--- a/dot_profile
++++ b/dot_profile
+@@ -25,4 +25,6 @@ fi
+ if [ -d "$HOME/.local/bin" ] ; then
+     PATH="$HOME/.local/bin:$PATH"
+ fi
+-. "$HOME/.cargo/env"
++if [ -r "$HOME/.config/rspb/env.sh" ]; then
++    . "$HOME/.config/rspb/env.sh"
++fi
+diff --git a/private_dot_config/alacritty/alacritty.toml b/private_dot_config/alacritty/alacritty.toml
+index 00bdeda..7a416f5 100644
+--- a/private_dot_config/alacritty/alacritty.toml
++++ b/private_dot_config/alacritty/alacritty.toml
+@@ -1,4 +1,77 @@
+ 
++[env]
++TERM = "xterm-256color"
++
++[general]
++live_config_reload = true
++
++[window]
++padding = { x = 5, y = 5 }
++dynamic_padding = true
++decorations = "None"
++startup_mode = "Maximized"
++opacity = 0.9
++dynamic_title = true
++
++[scrolling]
++history = 25000
++multiplier = 3
++
++[font]
++normal = { family = "Hack Nerd Font" }
++bold = { family = "Hack Nerd Font" }
++italic = { family = "Hack Nerd Font" }
++size = 12
++offset = { x = 0, y = 0 }
++glyph_offset = { x = 0, y = 0 }
++
++[colors]
++draw_bold_text_with_bright_colors = false
++indexed_colors = [
++  { index = 16, color = "0xff966c" },
++  { index = 17, color = "0xc53b53" },
++]
++
++[colors.primary]
++background = "0x222436"
++foreground = "0xc8d3f5"
++
++[colors.normal]
++black = "0x1b1d2b"
++red = "0xff757f"
++green = "0xc3e88d"
++yellow = "0xffc777"
++blue = "0x82aaff"
++magenta = "0xc099ff"
++cyan = "0x86e1fc"
++white = "0x828bb8"
++
++[colors.bright]
++black = "0x444a73"
++red = "0xff757f"
++green = "0xc3e88d"
++yellow = "0xffc777"
++blue = "0x82aaff"
++magenta = "0xc099ff"
++cyan = "0x86e1fc"
++white = "0xc8d3f5"
++
++[bell]
++animation = "EaseOutExpo"
++duration = 0
++color = "0xffffff"
++
++[mouse]
++hide_when_typing = true
++
++[selection]
++semantic_escape_chars = ",│`|:\"' ()[]{}<>"
++save_to_clipboard = true
++
++[cursor]
++style = "Beam"
++unfocused_hollow = true
++
+ [[keyboard.bindings]]
+ key = "Return"
+ mods = "Shift"
+diff --git a/private_dot_config/nvim/coc-settings.json b/private_dot_config/nvim/coc-settings.json
+index dd4e2dd..bc9bc56 100644
+--- a/private_dot_config/nvim/coc-settings.json
++++ b/private_dot_config/nvim/coc-settings.json
+@@ -9,12 +9,11 @@
+   "coc.preferences.extensionUpdateCheck": "weekly",
+   "coc.preferences.useQuickfixForLocations": true,
+   "coc.preferences.formatOnSave": false,
+-  "python.pythonPath": "./.venv/bin/python",
++  "python.pythonPath": "python",
+   "pyright.inlayHints.variableTypes": false,
+   "pyright.inlayHints.parameterTypes": false,
+   "pyright.inlayHints.functionReturnTypes": false,
+   "pyright.organizeimports.provider": "isort",
+-  "julia.lint.pirates": false,
+   "json.schemaDownload.trustedDomains": {
+     "https://www.schemastore.org": true
+   },
+diff --git a/private_dot_config/nvim/init.lua b/private_dot_config/nvim/init.lua
+index 7add3c2..8b52d83 100644
+--- a/private_dot_config/nvim/init.lua
++++ b/private_dot_config/nvim/init.lua
+@@ -1,5 +1,6 @@
+ require("config.base")
+ require("config.keymap")
+ require("config.autocmd")
++require("config.rspb")
+ require("config.lazy")
+ require("config.language")
+diff --git a/private_dot_config/nvim/lua/config/language.lua b/private_dot_config/nvim/lua/config/language.lua
+index 73f02f1..7b930cd 100644
+--- a/private_dot_config/nvim/lua/config/language.lua
++++ b/private_dot_config/nvim/lua/config/language.lua
+@@ -1,17 +1,9 @@
+ local autocmd = vim.api.nvim_create_autocmd
+-local set = vim.keymap.set
+-
+-autocmd("FileType", {
+-  pattern = { "r" },
+-  callback = function()
+-    set("i", ">>", "%>%")
+-    set("i", "<C-i><C-n>", "%in%")
+-  end,
+-})
+-
+ autocmd("BufWritePre", {
+   pattern = "*.py",
+   callback = function()
+-    vim.cmd [[ CocCommand python.sortImports ]]
++    if vim.fn.exists("*CocAction") == 1 and vim.fn["coc#rpc#ready"]() == 1 then
++      vim.cmd [[ CocCommand python.sortImports ]]
++    end
+   end
+ })
+diff --git a/private_dot_config/nvim/lua/config/lazy.lua b/private_dot_config/nvim/lua/config/lazy.lua
+index e1c1bd1..cece1f6 100644
+--- a/private_dot_config/nvim/lua/config/lazy.lua
++++ b/private_dot_config/nvim/lua/config/lazy.lua
+@@ -15,6 +15,8 @@ vim.opt.rtp:prepend(lazypath)
+ 
+ require('lazy').setup({
+   defaults = { lazy = true },
++  concurrency = 2,
++  install = { missing = vim.env.RSPB_NVIM_SETUP ~= "1" },
+   spec = {
+     { import = "plugins" },
+   }
+diff --git a/private_dot_config/nvim/lua/config/rspb.lua b/private_dot_config/nvim/lua/config/rspb.lua
+new file mode 100644
+index 0000000..a1afadd
+--- /dev/null
++++ b/private_dot_config/nvim/lua/config/rspb.lua
+@@ -0,0 +1,11 @@
++-- These extensions were installed locally but were not declared in dotfiles.
++local extensions = {
++  "coc-lua", "coc-pairs", "coc-pyright", "coc-snippets",
++  "coc-json", "coc-clangd", "coc-html",
++}
++vim.g.coc_global_extensions = extensions
++
++local python_host = vim.fn.exepath("pynvim-python")
++if python_host ~= "" then
++  vim.g.python3_host_prog = python_host
++end
+diff --git a/private_dot_config/nvim/lua/plugins/claudecode.lua b/private_dot_config/nvim/lua/plugins/claudecode.lua
+index 59763ed..51acf6f 100644
+--- a/private_dot_config/nvim/lua/plugins/claudecode.lua
++++ b/private_dot_config/nvim/lua/plugins/claudecode.lua
+@@ -1,5 +1,6 @@
+ return {
+   "coder/claudecode.nvim",
++  enabled = false, -- AI integration is not part of the Raspberry Pi environment.
+   dependencies = { "folke/snacks.nvim" },
+   opts = {
+     terminal = {
+diff --git a/private_dot_config/nvim/lua/plugins/coc.lua b/private_dot_config/nvim/lua/plugins/coc.lua
+index e4fd472..e2933ee 100644
+--- a/private_dot_config/nvim/lua/plugins/coc.lua
++++ b/private_dot_config/nvim/lua/plugins/coc.lua
+@@ -3,7 +3,7 @@ local set = vim.keymap.set
+ return {
+   "neoclide/coc.nvim",
+   branch = "master",
+-  build = "yarn install --frozen-lockfile",
++  build = "npm ci --no-audit --no-fund",
+   event = "VeryLazy",
+ 
+   config = function()
+diff --git a/private_dot_config/nvim/lua/plugins/iron.lua b/private_dot_config/nvim/lua/plugins/iron.lua
+index ffedb5b..c1ca23f 100644
+--- a/private_dot_config/nvim/lua/plugins/iron.lua
++++ b/private_dot_config/nvim/lua/plugins/iron.lua
+@@ -9,17 +9,9 @@ return {
+       config = {
+         repl_definition = {
+           python = {
+-            command = { "ipython" },
++            command = { "uv", "run", "--no-dev", "--with", "ipython", "ipython", "--no-autoindent" },
+             format = common.bracketed_paste,
+           },
+-          julia = {
+-            command = { "julia" },
+-            format = common.bracketed_paste,
+-          },
+-          r = {
+-            command = { "radian", "--no-save" },
+-            format = common.bracketed_paste,
+-          }
+         },
+ 
+         repl_open_cmd = require("iron.view").split.horizontal(15),
+diff --git a/private_dot_config/nvim/lua/plugins/treesitter.lua b/private_dot_config/nvim/lua/plugins/treesitter.lua
+index 38744ed..776af09 100644
+--- a/private_dot_config/nvim/lua/plugins/treesitter.lua
++++ b/private_dot_config/nvim/lua/plugins/treesitter.lua
+@@ -1,17 +1,16 @@
+ return {
+   "nvim-treesitter/nvim-treesitter",
++  branch = "master", -- This configuration uses the API of the pinned master branch.
+   event = "VeryLazy",
+-  build = function ()
+-    require("nvim-treesitter.install").update({ with_sync = true })
+-  end,
++  build = vim.env.RSPB_NVIM_SETUP ~= "1" and ":TSUpdateSync" or false,
+ 
+   config = function ()
+     require("nvim-treesitter.configs").setup({
+-      ensure_installed = { "python", "julia", "r", "lua", "vim"},
++      ensure_installed = vim.env.RSPB_NVIM_SETUP == "1" and {} or { "python", "lua", "vim", "bash", "c", "cpp", "json" },
+       sync_install = true,
+-      auto_install = true,
++      auto_install = false,
+       highlight = { enable = true },
+-      indent = { enable = true, disable = { "r" } },
++      indent = { enable = true },
+     })
+    end
+ }
+diff --git a/private_dot_config/private_fish/conf.d/rspb.fish b/private_dot_config/private_fish/conf.d/rspb.fish
+new file mode 100644
+index 0000000..e87fab4
+--- /dev/null
++++ b/private_dot_config/private_fish/conf.d/rspb.fish
+@@ -0,0 +1,9 @@
++# User installations, independent of username and CPU architecture.
++set -l rspb_cargo_dir "$HOME/.cargo"
++if set -q CARGO_HOME
++    set rspb_cargo_dir "$CARGO_HOME"
++end
++fish_add_path --path --move "$HOME/.local/bin" "$rspb_cargo_dir/bin"
++if type -q fnm
++    fnm env --use-on-cd --shell fish | source
++end
+diff --git a/private_dot_config/private_fish/config.fish b/private_dot_config/private_fish/config.fish
+index bf37816..e4fb8d6 100644
+--- a/private_dot_config/private_fish/config.fish
++++ b/private_dot_config/private_fish/config.fish
+@@ -1,59 +1,68 @@
+-if status is-interactive
+-    # Commands to run in interactive sessions can go here
++if status is-interactive; and type -q starship
++    starship init fish | source
+ end
+ 
+-pyenv init - | source
+-starship init fish | source
++alias v nvim
++alias e eza
++alias el "eza -l"
++alias ea "eza -a"
++alias eal "eza -la"
++alias tree "eza -T"
++
++function fcd
++    set -l destination (fd --type d --hidden . "$HOME" | fzf --height 40% --border)
++    test -n "$destination"; or return 1
++    cd "$destination"
++end
+ 
+-alias v "nvim"
+-alias e "exa"
+-alias el "exa -l"
+-alias ea "exa -a"
+-alias eal "exa -la"
+-alias tree "e -T"
+-alias fcd "cd (fd --type d --hidden . $HOME | fzf --height 40% --border)"
+-alias opj "cd (fd --type d --hidden . $HOME | fzf --height 40% --border) && v"
++function opj
++    fcd; and nvim
++end
+ 
+-# exec exa -l and venv_exists just after cd
+ function cd
+-  builtin cd $argv; and exa -l
+-  venv_exists (pwd)
++    builtin cd $argv; or return
++    if status is-interactive; and type -q eza
++        eza -l
++    end
+ end
+ 
+-# if `.venv` exists in current directory, activate it
+-function venv_exists
+-  set dir $argv[1]
+-  if test $dir != /
+-    if test -d $dir/.venv
+-      set -gx PYTHON_VIRTUAL_ENV $dir/.venv/bin/activate.fish
+-      source $PYTHON_VIRTUAL_ENV
+-    else
+-      venv_exists (dirname $dir)
++# Follow uv's project-local environments, including paths containing spaces.
++# Only deactivate environments activated here; leave manual/direnv environments alone.
++function __rspb_auto_venv --on-variable PWD
++    if set -q VIRTUAL_ENV; and not set -q __rspb_venv
++        return
+     end
+-  else
+-    if test -n "$PYTHON_VIRTUAL_ENV"
+-      deactivate
+-      set -e PYTHON_VIRTUAL_ENV
++    if set -q __rspb_venv; and test "$VIRTUAL_ENV" != "$__rspb_venv"
++        set -e __rspb_venv
++        return
+     end
+-  end
+-end
+ 
+-# >>> conda initialize >>>
+-# !! Contents within this block are managed by 'conda init' !!
+-if test -f /home/duck/.pyenv/versions/anaconda3-2024.10-1/bin/conda
+-    eval /home/duck/.pyenv/versions/anaconda3-2024.10-1/bin/conda "shell.fish" "hook" $argv | source
+-else
+-    if test -f "/home/duck/.pyenv/versions/anaconda3-2024.10-1/etc/fish/conf.d/conda.fish"
+-        . "/home/duck/.pyenv/versions/anaconda3-2024.10-1/etc/fish/conf.d/conda.fish"
+-    else
+-        set -x PATH "/home/duck/.pyenv/versions/anaconda3-2024.10-1/bin" $PATH
++    set -l directory "$PWD"
++    set -l target ""
++    while test "$directory" != /
++        if test -f "$directory/.venv/bin/activate.fish"
++            set target "$directory/.venv"
++            break
++        end
++        set directory (dirname "$directory")
++    end
++
++    if test -n "$target"
++        if test "$VIRTUAL_ENV" != "$target"
++            source "$target/bin/activate.fish"
++            set -g __rspb_venv "$target"
++        end
++    else if set -q __rspb_venv
++        if functions -q deactivate
++            deactivate
++        end
++        set -e __rspb_venv
+     end
+ end
+-# Do not auto-activate conda base
++
+ if status is-interactive
+-    conda deactivate 2>/dev/null
++    __rspb_auto_venv
++    if type -q direnv
++        direnv hook fish | source
++    end
+ end
+-# <<< conda initialize <<<
+-
+-set -x QT_QPA_PLATFORM xcb
+-direnv hook fish | source
+diff --git a/private_dot_config/rspb/env.sh b/private_dot_config/rspb/env.sh
+new file mode 100644
+index 0000000..3359bd3
+--- /dev/null
++++ b/private_dot_config/rspb/env.sh
+@@ -0,0 +1,13 @@
++# shellcheck shell=sh
++# Sourced by both .profile and .bashrc.
++for rspb_path in "${CARGO_HOME:-$HOME/.cargo}/bin" "$HOME/.local/bin"; do
++    case ":$PATH:" in
++        *:"$rspb_path":*) ;;
++        *) PATH="$rspb_path:$PATH" ;;
++    esac
++done
++export PATH
++unset rspb_path
++if [ -n "${BASH_VERSION:-}" ] && command -v fnm >/dev/null 2>&1; then
++    eval "$(fnm env --use-on-cd --shell bash)"
++fi
