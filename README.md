@@ -32,6 +32,20 @@ dotfiles の取得・Pi 用パッチの適用・`chezmoi apply`、Neovim の初�
 最後に `Setup complete.` で始まるメッセージが出たら完了です。
 途中でエラーになった場合は原因を解消し、同じディレクトリで `bash init.sh` を再実行してください。
 
+**chezmoi の初期化で止まった場合は、次のコマンドで dotfiles の設定から再開できます。**
+修正版を取得し、dotfiles の反映・Neovim の初期設定・ログインシェルの設定を完了します。
+依存ツールのインストールや `flkl` の準備は、ここでは繰り返しません。
+
+```sh
+cd "$HOME/.rspb"
+git pull --ff-only
+bash scripts/setup-dotfiles.sh
+```
+
+旧版で `unknown option 'revision'` と `chezmoi: git: exit status 129` が出るのは、
+`chezmoi init --revision` が OS 標準の古い Git に未対応の引数を渡すためです。
+修正版は通常の `git clone` と `git checkout` に分けて処理するので、Git の更新は不要です。
+
 ### 2. dotfiles が反映されたことを確認する
 
 まだ元のシェルでは PATH が更新されていないことがあるため、ここでは実行ファイルを絶対パスで指定します。
@@ -186,6 +200,7 @@ Pi は実験制御を担当します。`monitor` の作図や R による解析�
 [SomeKindOfDuck/dotfiles](https://github.com/SomeKindOfDuck/dotfiles) です。
 確認したコミット `1dac187d2fc504111fcd5f33f9b6559662f30599` を取得し、
 [Pi 用パッチ](patches/raspberry-pi.patch) を適用してから `chezmoi apply` を実行します。
+取得とコミットの選択は、古い Git でも使える `clone` と `checkout` で行います。
 新しい upstream の変更でパッチが突然適用できなくならないよう、基準コミットを固定しています。
 
 - fish / Bash の固定された `/home/duck`、pyenv、Anaconda の参照を整理し、uv / fnm の PATH を設定。
@@ -222,7 +237,8 @@ uv は標準で `.venv` を作成するため、Poetry の `virtualenvs.in-proje
 
 ## 検証
 
-シェル構文・ShellCheck に加え、実際の chezmoi による一時 HOME への適用と再実行、
+シェル構文・ShellCheck に加え、実際の Git と chezmoi による初回 clone、固定コミットの選択、
+失敗後の空ディレクトリからの再開、一時 HOME への適用と再実行、
 fish の仮想環境切替、Alacritty TOML、Neovim 設定、競合時の保護を確認できます。
 Python 3.11 以上、chezmoi、fish、Neovim、git が必要です。
 

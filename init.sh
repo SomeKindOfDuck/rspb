@@ -34,8 +34,6 @@ case "$(dpkg --print-architecture)" in
 esac
 
 rspb_bin_dir="$HOME/.local/bin"
-# The upstream chezmoi repository stores its configuration under ~/.config.
-rspb_config_dir="$HOME/.config"
 rspb_cargo_dir="${CARGO_HOME:-$HOME/.cargo}"
 export PATH="$rspb_bin_dir:$rspb_cargo_dir/bin:$PATH"
 mkdir -p "$rspb_bin_dir"
@@ -121,25 +119,5 @@ if [[ "$rspb_init_flkl" == 1 ]]; then
     bash "$rspb_root/scripts/setup-flkl.sh"
 fi
 
-# Match the audited local chezmoi source (also published on GitHub).
-# Pin the baseline so future upstream changes cannot silently invalidate the patch.
-chezmoi init --revision 1dac187d2fc504111fcd5f33f9b6559662f30599 \
-    "${RSPB_DOTFILES_REPO:-https://github.com/SomeKindOfDuck/dotfiles}"
-rspb_dotfiles_source="$(chezmoi source-path)"
-bash "$rspb_root/scripts/apply-dotfiles.sh" "$rspb_dotfiles_source"
-chezmoi apply
-
-mkdir -p "$rspb_config_dir/fish/completions"
-uv generate-shell-completion fish > "$rspb_config_dir/fish/completions/uv.fish"
-
-if [[ "$rspb_init_nvim" == 1 ]]; then
-    RSPB_NVIM_SETUP=1 RSPB_NVIM_SETUP_SCRIPT="$rspb_root/scripts/setup-nvim.lua" \
-        nvim --headless -i NONE -c 'lua dofile(vim.env.RSPB_NVIM_SETUP_SCRIPT)'
-fi
-
-if [[ -t 0 ]]; then
-    chsh -s "$(command -v fish)"
-else
-    printf 'To make fish your login shell, run: chsh -s %s\n' "$(command -v fish)"
-fi
-printf 'Setup complete. Log out and back in to activate fish and dialout membership.\n'
+# This final stage can also be rerun independently after an interrupted setup.
+bash "$rspb_root/scripts/setup-dotfiles.sh"

@@ -6,6 +6,8 @@ Set CHEZMOI_BIN / NVIM_BIN when the normal launcher is unavailable.
 import hashlib
 import os
 from pathlib import Path
+import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,7 +21,7 @@ NVIM = os.environ.get("NVIM_BIN", "nvim")
 
 
 def run(*args, env=None, check=True):
-    result = subprocess.run(args, env=env, capture_output=True, text=True)
+    result = subprocess.run(args, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if check and result.returncode:
         print(result.stdout, result.stderr, file=sys.stderr)
         result.check_returncode()
@@ -46,27 +48,52 @@ with tempfile.TemporaryDirectory(prefix="rspb-dotfiles-test-") as temporary:
         "LANG": "C.UTF-8",
         "TERM": "xterm-256color",
         "NVIM_LOG_FILE": str(work / "nvim.log"),
+        "RSPB_INIT_NVIM": "0",
     }
     chezmoi = [
-        CHEZMOI, "--no-tty", "--source", str(source), "--destination", str(home),
+        shutil.which(CHEZMOI), "--no-tty", "--source", str(source),
+        "--working-tree", str(source), "--destination", str(home),
         "--config", str(work / "chezmoi.toml"), "--cache", str(work / "cache"),
         "--persistent-state", str(work / "state.boltdb"),
     ]
-    init = ["init", "--guess-repo-url=false", "--revision", REVISION, str(REFERENCE)]
-    # Clone explicitly: some sandboxes expose an empty /tmp/.git sentinel,
-    # which chezmoi mistakes for an existing parent source repository.
-    run("git", "clone", "--quiet", "--no-hardlinks", str(REFERENCE), str(source), env=env)
-    run("git", "-C", str(source), "checkout", "--quiet", REVISION, env=env)
-    run(*chezmoi, *init, env=env)
-    run("bash", str(ROOT / "scripts/apply-dotfiles.sh"), str(source), env=env)
+    # Exercise the real first clone with the system Git, rather than preparing the
+    # source ahead of time (which hid git clone --revision failures on Git < 2.49).
+    upstream = work / "upstream"
+    run("git", "clone", "--quiet", "--no-hardlinks", str(REFERENCE), str(upstream), env=env)
+    run("git", "-C", str(upstream), "checkout", "--quiet", REVISION, env=env)
+    (upstream / "future-marker").write_text("Newer upstream revision must not be applied\n")
+    run("git", "-C", str(upstream), "add", "future-marker", env=env)
+    run("git", "-C", str(upstream), "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+        "commit", "--quiet", "-m", "Newer upstream fixture", env=env)
+    upstream_revision = run("git", "-C", str(upstream), "rev-parse", "HEAD", env=env).stdout.strip()
+    env["RSPB_DOTFILES_REPO"] = str(upstream)
+    bin_dir = home / ".local/bin"
+    bin_dir.mkdir(parents=True)
+    wrapper = bin_dir / "chezmoi"
+    wrapper.write_text("#!/bin/sh\nexec " + shlex.join(chezmoi) + ' "$@"\n')
+    wrapper.chmod(0o755)
+    # Only stub the unrelated uv completion generation. Git and chezmoi are real.
+    uv = bin_dir / "uv"
+    uv.write_text("#!/bin/sh\n[ \"$*\" = 'generate-shell-completion fish' ] || exit 99\nprintf 'complete -c uv -f\\n'\n")
+    uv.chmod(0o755)
+    setup = ["bash", str(ROOT / "scripts/setup-dotfiles.sh")]
+    assert not source.exists()
+    run(*setup, env=env)
+    assert run("git", "-C", str(source), "rev-parse", "HEAD").stdout.strip() == REVISION
+    assert not (source / "future-marker").exists()
     first = contents(source)
-    # Repeat the same sequence used by init.sh, including chezmoi init on a dirty source.
-    run(*chezmoi, *init, env=env)
-    run("bash", str(ROOT / "scripts/apply-dotfiles.sh"), str(source), env=env)
+    run(*setup, env=env)
     assert contents(source) == first, "Repeated setup changed the source"
-    run(*chezmoi, "apply", env=env)
     run(*chezmoi, "verify", env=env)
-    print("PASS patch application, repeated init/apply, chezmoi verify")
+    print("PASS real first clone, pinned checkout, repeated setup and chezmoi verify")
+
+    # A failed chezmoi init can leave an empty source directory. Resume it safely.
+    shutil.rmtree(source)
+    source.mkdir()
+    run(*setup, env=env)
+    assert contents(source) == first
+    run(*chezmoi, "verify", env=env)
+    print("PASS recovery from an empty source directory after a failed init")
 
     config = home / ".config"
     assert not (config / "alacritty/alacritty.yml").exists()
@@ -146,3 +173,16 @@ print("Neovim configuration verified")
     assert result.returncode != 0
     assert contents(conflict) == before, "Conflict caused a partial edit"
     print("PASS conflicting dotfiles stop without partial edits")
+
+    # Never switch a different revision when it has the user's uncommitted edits.
+    dirty = work / "dirty source"
+    run("git", "clone", "--quiet", "--no-hardlinks", str(upstream), str(dirty), env=env)
+    (dirty / "dot_bashrc").write_text("# user changes\n")
+    dirty_chezmoi = [str(dirty) if arg == str(source) else arg for arg in chezmoi]
+    wrapper.write_text("#!/bin/sh\nexec " + shlex.join(dirty_chezmoi) + ' "$@"\n')
+    before = contents(dirty)
+    result = run(*setup, env=env, check=False)
+    assert result.returncode != 0 and "refusing to switch" in result.stderr
+    assert contents(dirty) == before
+    assert run("git", "-C", str(dirty), "rev-parse", "HEAD").stdout.strip() == upstream_revision
+    print("PASS dirty source at another revision is preserved")
