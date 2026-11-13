@@ -28,7 +28,8 @@ bash init.sh
 ```
 
 **`bash init.sh` が、依存ツールの導入、`flkl/pj-yoneyama` と Python 環境の準備、
-dotfiles の取得・Pi 用パッチの適用・`chezmoi apply`、Neovim の初期設定まで自動で行います。**
+dotfiles の取得・Pi 用パッチの適用・`chezmoi apply`、Alt+Enter の登録、Neovim の初期設定まで自動で行います。**
+ショートカットの自動登録は GNOME / labwc のデスクトップ端末から実行した場合に対応します。
 最後に `Setup complete.` で始まるメッセージが出たら完了です。
 途中でエラーになった場合は原因を解消し、同じディレクトリで `bash init.sh` を再実行してください。
 
@@ -82,6 +83,28 @@ chsh -s /usr/bin/fish
 ```sh
 sudo reboot
 ```
+
+### 3a. Alt+Enter のショートカットを追加する（設定済みの Pi / SSH で導入した場合）
+
+**Pi のデスクトップ上のターミナル**で実行します。初回セットアップで登録済みなら省略できます。
+
+```sh
+cd "$HOME/.rspb"
+git pull --ff-only
+python3 scripts/setup-shortcuts.py
+```
+
+**Alt+Enter で Alacritty を起動し、未インストールなら既定のターミナルを開きます。**
+起動先は Alacritty、`xdg-terminal-exec`、`x-terminal-emulator` の順に選びます。
+Ubuntu の GNOME と Raspberry Pi OS の labwc を自動判定します。
+labwc でログインし直す案内が出た場合は、一度ログアウトして再ログインしてください。
+環境が判定できない場合は登録を省略し、案内を表示します。labwc と分かっている場合は
+`python3 scripts/setup-shortcuts.py --desktop labwc` で明示できます。
+
+他のキー設定は維持します。Alt+Enter に既存の割り当てがある場合は、この起動操作に変更します。
+元の labwc 設定は `rc.xml.rspb-backup`、GNOME のカスタムショートカットは
+`~/.config/rspb/gnome-shortcuts-before.json` に初回のみ保存します。
+この設定は rspb のスクリプトで管理し、`chezmoi apply` だけでは登録しません。
 
 ### 4. ログインし直して環境と Arduino を確認する
 
@@ -154,7 +177,7 @@ arm64 ではメモリ使用量を抑えるため `CARGO_BUILD_JOBS=1` を既定�
 | 対象 | 内容 |
 | --- | --- |
 | シェル・操作 | fish、fzf、direnv、tmux、bottom、eza、fd、ripgrep、Starship |
-| ターミナル | Alacritty、Hack Nerd Font、X11 / Wayland 用クリップボード |
+| ターミナル | Alacritty、Hack Nerd Font、X11 / Wayland 用クリップボード、Alt+Enter の起動ショートカット（GNOME / labwc） |
 | エディター | 最新安定版 Neovim、clangd、pynvim、isort、IPython |
 | Python | uv と uv 管理の安定版 Python 3。flkl 用には別途 Python 3.10 |
 | JavaScript | fnm による最新 Node.js LTS、Corepack、Yarn |
@@ -246,6 +269,13 @@ Python 3.11 以上、chezmoi、fish、Neovim、git が必要です。
 python3 tests/check_dotfiles.py /path/to/dotfiles
 ```
 
+ショートカットは一時 HOME と隔離した GSettings の保存先で検証します。実際のデスクトップ設定は変更しません。
+Python 3.9 以上が必要です。GNOME の検証には `gsettings` と GNOME のスキーマも必要です。
+
+```sh
+python3 tests/check_shortcuts.py
+```
+
 確認した `flkl/pj-yoneyama` は `127b5238c1fe2fdfcb5ff0fe7bb58b018443decf` です。
 x86_64 の一時環境で Python 3.10 の依存導入・CLI 起動、Arduino CLI 1.5.1 / AVR 1.8.8 による
 Uno 向けコンパイルを確認しました。ARM64 は依存の解決と配布物を確認しています。
@@ -258,3 +288,4 @@ Pi 実機でのインストール・USB 認識・ポート権限・音声出力�
 - [fnm](https://github.com/Schniz/fnm#installation) / [Yarn](https://yarnpkg.com/getting-started/install)
 - [eza](https://github.com/eza-community/eza/blob/main/INSTALL.md) / [Alacritty](https://github.com/alacritty/alacritty/blob/master/INSTALL.md)
 - [Arduino CLI](https://arduino.github.io/arduino-cli/latest/installation/)
+- [labwc のキー設定](https://labwc.github.io/labwc-config.5.html#keyboard) / [GNOME のショートカット用スキーマ](https://github.com/GNOME/gnome-settings-daemon/blob/master/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in)

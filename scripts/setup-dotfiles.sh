@@ -41,6 +41,8 @@ bash "$rspb_root/scripts/apply-dotfiles.sh" "$rspb_dotfiles_source"
 chezmoi --source "$rspb_dotfiles_source" --working-tree "$rspb_dotfiles_source" init
 chezmoi --source "$rspb_dotfiles_source" apply
 
+python3 "$rspb_root/scripts/setup-shortcuts.py"
+
 mkdir -p "$HOME/.config/fish/completions"
 uv generate-shell-completion fish > "$HOME/.config/fish/completions/uv.fish"
 
