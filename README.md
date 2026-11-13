@@ -4,9 +4,12 @@
 対象は **64bit Ubuntu / Raspberry Pi OS（arm64 / amd64）** です。
 R・Julia・Claude Code・Codex は導入しません。
 
-## 実行方法
+## 最初に実行するコマンド
 
 sudo を使える通常ユーザーで実行します。スクリプト全体を `sudo` で実行しないでください。
+以下は既定の配置先を使う手順です。各段階が完了してから、次の段階に進んでください。
+
+### 1. リポジトリを取得してセットアップする
 
 ```sh
 sudo apt-get update
@@ -16,13 +19,121 @@ cd "$HOME/.rspb"
 bash init.sh
 ```
 
+すでに clone 済みなら、上の `git clone` の代わりに次で更新してから `bash init.sh` を実行します。
+
+```sh
+cd "$HOME/.rspb"
+git pull --ff-only
+bash init.sh
+```
+
+**`bash init.sh` が、依存ツールの導入、`flkl/pj-yoneyama` と Python 環境の準備、
+dotfiles の取得・Pi 用パッチの適用・`chezmoi apply`、Neovim の初期設定まで自動で行います。**
+最後に `Setup complete.` で始まるメッセージが出たら完了です。
+途中でエラーになった場合は原因を解消し、同じディレクトリで `bash init.sh` を再実行してください。
+
+### 2. dotfiles が反映されたことを確認する
+
+まだ元のシェルでは PATH が更新されていないことがあるため、ここでは実行ファイルを絶対パスで指定します。
+
+```sh
+# Pi 上の chezmoi ソースディレクトリを表示
+"$HOME/.local/bin/chezmoi" source-path
+
+# 適用先がソースと一致するか確認（終了コード 0 なら反映済み）
+"$HOME/.local/bin/chezmoi" verify
+```
+
+`chezmoi apply` は手順 1 の中で実行済みです。差分を確認して再適用する必要がある場合は、次を実行します。
+
+```sh
+"$HOME/.local/bin/chezmoi" diff
+"$HOME/.local/bin/chezmoi" apply
+"$HOME/.local/bin/chezmoi" verify
+```
+
+### 3. fish とシリアルポートの権限を反映する
+
+対話端末では `init.sh` の最後にログインシェルを fish に変更します。
+非対話実行などで `chsh` の案内が表示された場合だけ、次を実行してください。
+
+```sh
+chsh -s /usr/bin/fish
+```
+
+作業を保存して再起動し、同じユーザーでログインし直します。
+再起動の代わりに、デスクトップや SSH セッションからログアウトして再ログインしても構いません。
+これでログインシェルと `dialout` グループが反映されます。
+
+```sh
+sudo reboot
+```
+
+### 4. ログインし直して環境と Arduino を確認する
+
+Arduino Uno R3 を 1 台接続して、次を実行します。
+
+```sh
+# /usr/bin/fish と、dialout を含むグループ一覧を確認
+echo "$SHELL"
+id -nG
+
+# dotfiles の反映と flkl のブランチ・Python・CLI を確認
+chezmoi verify
+cd "$HOME/Programs/Github/flkl"
+git branch --show-current
+uv run --locked --no-dev python --version
+uv run --locked --no-dev train --help
+
+# Arduino の認識を確認
+arduino-cli board list
+```
+
+ブランチが `pj-yoneyama`、Python が `3.10.x` であることを確認します。
+`arduino-cli board list` では接続した Arduino のポートとボード情報を確認してください。
+
+### 5. 実験設定を編集して実行する
+
+設定ファイルは `init.sh` がサンプルから作成済みです。装置の配線と実験条件に合わせて編集します。
+
+```sh
+cd "$HOME/Programs/Github/flkl"
+nvim config/train.yaml
+nvim config/test.yaml
+```
+
+準備ができたら、実行したい方のコマンドを選びます。`M01` は実際の被験体 ID に置き換えてください。
+**ここからは Arduino へスケッチを書き込み、実際に装置を動かします。**
+
+training を実行する場合：
+
+```sh
+cd "$HOME/Programs/Github/flkl"
+uv run --locked --no-dev train M01 config/train.yaml
+```
+
+test を実行する場合：
+
+```sh
+cd "$HOME/Programs/Github/flkl"
+uv run --locked --no-dev test M01 config/test.yaml
+```
+
+### 6. flkl の準備だけをやり直す場合
+
+uv と Arduino CLI が使える状態で、次を実行します。
+
+```sh
+cd "$HOME/.rspb"
+bash scripts/setup-flkl.sh
+```
+
+## セットアップについて
+
 公開リポジトリを HTTPS で取得するため、GitHub アカウントへのログインは不要です。
 ツールは各公式配布元の安定版を導入します。Rust 製ツールのビルドには時間がかかります。
 arm64 ではメモリ使用量を抑えるため `CARGO_BUILD_JOBS=1` を既定値にします。
-途中で失敗した場合はその場で停止します。原因を解消して再実行してください。
-
-最後にログインシェルを fish に変更します。非対話実行では、表示された `chsh` コマンドを実行してください。
-完了後はログアウト・再ログインして、シェル設定とシリアルポート用の `dialout` グループを反映します。
+途中で失敗した場合はその場で停止します。
 
 ## 導入内容
 
@@ -61,15 +172,6 @@ Uno R4 など別 MCU のボードは、コアの追加だけでは対応でき�
 
 実験時は再ログイン後に **flkl のルートディレクトリから** 実行します。
 設定の `sketch: ./ino` とログの保存先が、カレントディレクトリ基準だからです。
-
-```sh
-cd "$HOME/Programs/Github/flkl"
-arduino-cli board list
-# config/train.yaml / config/test.yaml を装置と実験条件に合わせて編集してから実行
-uv run --locked --no-dev train M01 config/train.yaml
-# テストを実行する場合
-uv run --locked --no-dev test M01 config/test.yaml
-```
 
 `train` / `test` / `blink` は起動時に Arduino へスケッチを書き込みます。
 認識できる Arduino を 1 台接続し、ポートのアクセス権と配線を確認してください。
@@ -113,9 +215,6 @@ Neovim プラグインは dotfiles の `lazy-lock.json` に合わせ、パーサ
 | `RSPB_PYTHON_VERSION` | `3`。汎用 Python の指定。flkl は自身の `.python-version` を使用 |
 | `RSPB_DOTFILES_REPO` | `https://github.com/SomeKindOfDuck/dotfiles`。基準コミットを含むミラー等を指定 |
 | `CARGO_BUILD_JOBS` | arm64 は `1`、amd64 は Cargo の既定値 |
-
-flkl のセットアップだけを再実行する場合は `bash scripts/setup-flkl.sh` を使えます。
-uv と Arduino CLI が PATH 上にある状態で実行してください。
 
 汎用の Python プロジェクトでは `uv init`、`uv add`、`uv sync`、`uv run` を使用します。
 uv は標準で `.venv` を作成するため、Poetry の `virtualenvs.in-project` 相当の設定は不要です。
