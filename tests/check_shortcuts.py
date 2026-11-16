@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "scripts/setup-shortcuts.py"
 MEDIA_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
+WM_KEYS = "org.gnome.desktop.wm.keybindings"
 CUSTOM = MEDIA_KEYS + ".custom-keybinding:"
 SHORTCUT = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rspb-terminal/"
 
@@ -88,6 +89,9 @@ class ShortcutsTest(unittest.TestCase):
   <keyboard><default/><keybind key="C-A-t"><action name="Execute"><command>lxterminal</command></action></keybind>
     <keybind key="A-Return"><action name="ToggleMaximize"/></keybind>
     <keybind key="Mod1-Return"><action name="Execute" command="old-terminal"/></keybind>
+    <keybind key="A-BackSpace"><action name="Execute" command="old-command"/></keybind>
+    <keybind key="Mod1-BackSpace"><action name="Kill"/></keybind>
+    <keybind key="A-F4"><action name="Close"/></keybind>
   </keyboard>
 </openbox_config>
 '''
@@ -102,8 +106,12 @@ class ShortcutsTest(unittest.TestCase):
         ns = {"c": "http://openbox.org/3.4/rc"}
         self.assertEqual(root.findtext("c:theme/c:name", namespaces=ns), "PiXflat")
         self.assertIn(b"Keep my other settings", first)
-        bindings = {item.get("key"): item for item in root.findall("c:keyboard/c:keybind", ns)}
-        self.assertEqual(set(bindings), {"C-A-t", "A-Return"})
+        all_bindings = root.findall("c:keyboard/c:keybind", ns)
+        bindings = {item.get("key"): item for item in all_bindings}
+        self.assertEqual(len(all_bindings), len(bindings))
+        self.assertEqual(set(bindings), {"C-A-t", "A-Return", "A-BackSpace", "A-F4"})
+        for key in ("A-BackSpace", "A-F4"):
+            self.assertEqual(bindings[key].find("c:action", ns).get("name"), "Close")
         self.assertEqual(bindings["C-A-t"].findtext("c:action/c:command", namespaces=ns), "lxterminal")
         command = bindings["A-Return"].findtext("c:action/c:command", namespaces=ns)
         self.assertEqual(shlex.split(command), [str(self.launcher)])
@@ -144,27 +152,56 @@ class ShortcutsTest(unittest.TestCase):
     def test_gnome_fresh_setup(self):
         self.require_gnome()
         self.assertEqual(self.gget(MEDIA_KEYS, "custom-keybindings"), [])
+        original_close = self.gget(WM_KEYS, "close")
         self.setup_shortcuts()
         self.assertEqual(self.gget(MEDIA_KEYS, "custom-keybindings"), [SHORTCUT])
         self.assertEqual(shlex.split(self.gget(CUSTOM + SHORTCUT, "command")), [str(self.launcher)])
         self.assertEqual(self.gget(CUSTOM + SHORTCUT, "binding"), "<Alt>Return")
+        self.assertEqual(self.gget(WM_KEYS, "close"), [*original_close, "<Alt>BackSpace"])
 
     def test_gnome_preserves_other_shortcuts_and_handles_conflicts_on_repeat(self):
         self.require_gnome()
         unrelated, conflicting = "/custom/unrelated/", "/custom/conflicting/"
-        self.gset(MEDIA_KEYS, "custom-keybindings", [unrelated, conflicting])
-        for path, binding in [(unrelated, "<Super>e"), (conflicting, "<Alt>Return")]:
+        close_conflict = "/custom/close-conflict/"
+        paths = [unrelated, conflicting, close_conflict]
+        self.gset(MEDIA_KEYS, "custom-keybindings", paths)
+        original_close = ["<Alt>F4", "<Super>q"]
+        self.gset(WM_KEYS, "close", original_close)
+        for path, binding in [(unrelated, "<Super>e"), (conflicting, "<Alt>Return"),
+                              (close_conflict, "<Alt>BackSpace")]:
             for key, value in {"name": "Existing", "command": "existing-command", "binding": binding}.items():
                 self.gset(CUSTOM + path, key, value)
         self.setup_shortcuts()
         backup = (self.config / "rspb/gnome-shortcuts-before.json").read_bytes()
+        close_backup = (self.config / "rspb/gnome-close-before.json").read_bytes()
         self.setup_shortcuts()
-        self.assertEqual(self.gget(MEDIA_KEYS, "custom-keybindings"), [unrelated, conflicting, SHORTCUT])
+        self.assertEqual(self.gget(MEDIA_KEYS, "custom-keybindings"), [*paths, SHORTCUT])
         self.assertEqual(self.gget(CUSTOM + unrelated, "binding"), "<Super>e")
         self.assertEqual(self.gget(CUSTOM + unrelated, "command"), "existing-command")
         self.assertEqual(self.gget(CUSTOM + conflicting, "binding"), "")
+        self.assertEqual(self.gget(CUSTOM + close_conflict, "binding"), "")
+        self.assertEqual(self.gget(WM_KEYS, "close"), [*original_close, "<Alt>BackSpace"])
         self.assertEqual(json.loads(backup)["bindings"][conflicting]["binding"], "<Alt>Return")
         self.assertEqual((self.config / "rspb/gnome-shortcuts-before.json").read_bytes(), backup)
+        self.assertEqual(json.loads(close_backup)["close"], original_close)
+        self.assertEqual(json.loads(close_backup)["bindings"][close_conflict]["binding"], "<Alt>BackSpace")
+        self.assertEqual((self.config / "rspb/gnome-close-before.json").read_bytes(), close_backup)
+
+    def test_gnome_upgrade_keeps_old_backup_and_existing_close_alias(self):
+        self.require_gnome()
+        old_backup = self.write(self.config / "rspb/gnome-shortcuts-before.json",
+                                '{"custom-keybindings": [], "bindings": {}}\n')
+        original_backup = old_backup.read_bytes()
+        original_close = ["<Alt>F4", "<Mod1>BackSpace"]
+        self.gset(WM_KEYS, "close", original_close)
+        self.gset(MEDIA_KEYS, "custom-keybindings", [SHORTCUT])
+        self.gset(CUSTOM + SHORTCUT, "binding", "<Alt>Return")
+        self.setup_shortcuts()
+        self.assertEqual(old_backup.read_bytes(), original_backup)
+        self.assertEqual(self.gget(MEDIA_KEYS, "custom-keybindings"), [SHORTCUT])
+        self.assertEqual(self.gget(WM_KEYS, "close"), original_close)
+        self.assertEqual(json.loads((self.config / "rspb/gnome-close-before.json").read_text())["close"],
+                         original_close)
 
     def test_gnome_failed_persistence_is_reported(self):
         self.require_gnome()

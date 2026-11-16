@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Set Alt+Enter on GNOME or labwc without replacing unrelated shortcuts."""
+"""Set Alt+Enter (terminal) and Alt+Backspace (close window) on GNOME or labwc."""
 
 import argparse
 import ast
@@ -15,8 +15,10 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 MEDIA_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
+WM_KEYS = "org.gnome.desktop.wm.keybindings"
 CUSTOM_KEY = MEDIA_KEYS + ".custom-keybinding:"
 SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/rspb-terminal/"
+CLOSE_BINDINGS = ("<alt>backspace", "<mod1>backspace")
 
 
 def run(*args):
@@ -38,17 +40,28 @@ def gset(schema, key, value):
 
 def setup_gnome(launcher, config_home):
     paths = gget(MEDIA_KEYS, "custom-keybindings")
+    close_bindings = gget(WM_KEYS, "close")
     old_values = {
         path: {key: gget(CUSTOM_KEY + path, key) for key in ("name", "command", "binding")}
         for path in dict.fromkeys([*paths, SHORTCUT_PATH])
     }
     conflicts = [path for path in paths if path != SHORTCUT_PATH
-                 and old_values[path]["binding"].lower() in ("<alt>return", "<mod1>return")]
+                 and old_values[path]["binding"].lower() in
+                 ("<alt>return", "<mod1>return", *CLOSE_BINDINGS)]
     backup = config_home / "rspb/gnome-shortcuts-before.json"
     if not backup.exists():
         backup.parent.mkdir(parents=True, exist_ok=True)
         backup.write_text(json.dumps({"custom-keybindings": paths, "bindings": old_values},
                                     ensure_ascii=False, indent=2) + "\n")
+    # Existing installs already have the Alt+Enter backup. Capture the close
+    # bindings separately, before changing them, without overwriting that backup.
+    close_backup = config_home / "rspb/gnome-close-before.json"
+    if not close_backup.exists():
+        close_backup.write_text(json.dumps({
+            "close": close_bindings,
+            "bindings": {path: old_values[path] for path in conflicts
+                         if old_values[path]["binding"].lower() in CLOSE_BINDINGS},
+        }, ensure_ascii=False, indent=2) + "\n")
     for path in conflicts:
         gset(CUSTOM_KEY + path, "binding", "")
     for key, value in {"name": "Terminal (rspb)", "command": shlex.quote(str(launcher)),
@@ -56,7 +69,10 @@ def setup_gnome(launcher, config_home):
         gset(CUSTOM_KEY + SHORTCUT_PATH, key, value)
     if SHORTCUT_PATH not in paths:
         gset(MEDIA_KEYS, "custom-keybindings", [*paths, SHORTCUT_PATH])
+    if not any(binding.lower() in CLOSE_BINDINGS for binding in close_bindings):
+        gset(WM_KEYS, "close", [*close_bindings, "<Alt>BackSpace"])
     print("Alt+Enter: Alacritty / default terminal (GNOME).")
+    print("Alt+Backspace: close the active window (GNOME).")
 
 
 def write_labwc_config(path, data):
@@ -104,14 +120,17 @@ def setup_labwc(launcher, config_home):
         ET.SubElement(keyboards[0], prefix + "default")
     for keyboard in keyboards:
         for binding in keyboard.findall(prefix + "keybind"):
-            if binding.get("key", "").lower() in ("a-return", "mod1-return"):
+            if binding.get("key", "").lower() in ("a-return", "mod1-return", "a-backspace", "mod1-backspace"):
                 keyboard.remove(binding)
     binding = ET.SubElement(keyboards[0], prefix + "keybind", key="A-Return")
     action = ET.SubElement(binding, prefix + "action", name="Execute")
     ET.SubElement(action, prefix + "command").text = shlex.quote(str(launcher))
+    close_binding = ET.SubElement(keyboards[0], prefix + "keybind", key="A-BackSpace")
+    ET.SubElement(close_binding, prefix + "action", name="Close")
     ET.indent(root, space="  ")
     write_labwc_config(path, ET.tostring(root, encoding="utf-8", xml_declaration=True) + b"\n")
     print(f"Alt+Enter: Alacritty / default terminal (labwc: {path}).")
+    print("Alt+Backspace: close the active window (labwc).")
     if os.environ.get("LABWC_PID") and shutil.which("labwc"):
         try:
             run("labwc", "--reconfigure")
